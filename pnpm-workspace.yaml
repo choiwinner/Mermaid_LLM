@@ -1,0 +1,6 @@
+minimumReleaseAge: 4320 # 4320 minutes = 3 days
+packages:
+  - 'packages/*'
+  - 'packages/mermaid/src/docs'
+  - 'packages/mermaid/src/vitepress'
+  - 'tests/*'

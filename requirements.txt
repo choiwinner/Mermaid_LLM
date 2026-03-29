@@ -1,0 +1,7 @@
+streamlit
+google-generativeai
+plotly
+matplotlib
+koreanize-matplotlib
+python-dotenv
+ollama

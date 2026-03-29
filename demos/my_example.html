@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Mermaid 테스트 다이어그램</title>
+</head>
+<body>
+    <h1>Mermaid 예제 다이어그램</h1>
+    <p>개발 서버(<code>http://localhost:9000/my_example.html</code>)에서 생성한 다이어그램입니다.</p>
+
+    <h2>1. Flowchart 테스트</h2>
+    <pre class="mermaid">
+        graph TD
+            A[시작] --> B{결정}
+            B --|예|--> C[작업 1]
+            C --> D[종료]
+            B --|아니오|--> E[작업 2]
+            E --> D
+    </pre>
+
+    <h2>2. Sequence Diagram 테스트</h2>
+    <pre class="mermaid">
+        sequenceDiagram
+            participant User as 사용자
+            participant AI as AI 모델
+            User->>AI: 예제 다이어그램을 만들어 줘
+            AI-->>User: Mermaid 다이어그램을 생성합니다.
+            AI->>AI: 렌더링 중...
+            AI-->>User: 완료되었습니다!
+    </pre>
+
+    <script type="module">
+        import mermaid from '/mermaid.esm.mjs';
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</body>
+</html>
