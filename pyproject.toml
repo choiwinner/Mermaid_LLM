@@ -1,0 +1,15 @@
+[project]
+name = "mermaid-llm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "google-generativeai>=0.8.6",
+    "koreanize-matplotlib>=0.1.1",
+    "matplotlib>=3.10.8",
+    "ollama>=0.6.1",
+    "plotly>=6.6.0",
+    "python-dotenv>=1.2.2",
+    "streamlit>=1.55.0",
+]
