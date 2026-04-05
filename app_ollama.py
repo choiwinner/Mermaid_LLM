@@ -13,15 +13,77 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
+# 프롬프트 정의
+PLANNER_SYSTEM_PROMPT = """
+당신은 시스템 아키텍처 설계 및 데이터 분석 전문가 'Planner'입니다.
+사용자의 요청을 분석하고 가장 적절한 시각화 전략과 다이어그램 도구를 제안하는 것이 당신의 역할입니다.
+
+[수행 지침]
+1. 분석(Analysis): 사용자의 요청 의도를 파악하고 핵심 엔티티, 흐름, 구조적 관계 등을 텍스트로 분석하세요.
+2. 도구 선택(Tools): 분석을 바탕으로 가장 적합한 **단 하나(Only One)**의 시각화 도구를 결정하세요. 여러 다이어그램을 동시에 제안하지 마십시오.
+   - flowchart: 일반적인 비즈니스 프로세스, 알고리즘, 시스템 구성도
+   - sequenceDiagram: 객체/시스템 간의 상호작용 및 시간 순서상 흐름 (메시징, API 호출 등)
+   - erDiagram: 데이터베이스 스키마 및 엔티티 간의 관계 정의
+   - stateDiagram-v2: 시스템의 상태 전이 및 동작 제어 흐름
+   - classDiagram: 객체 지향 클래스 구조, 상속 관계, 프로퍼티 정의
+   - gantt: 프로젝트 일정, 로드맵, 타임라인 관리
+   - journey: 사용자의 서비스 경험 여정 및 감정 변화 분석
+   - pie / quadrantChart / mindmap: 특수 목적의 데이터 분포 및 브레인스토밍
+   - Plotly (Python): 복잡한 수치 데이터 분석, 통계 그래프, 대화형 차트
+3. 설계 전략(Strategy): 선택한 **하나의 도구**에서 어떤 요소(subgraph, style, note, loop 등)를 강조하고, **한국어 레이블**을 통해 가독성을 어떻게 높일지 구체적인 계획을 세우세요.
+4. 사용자 승인 요청: 분석한 내용을 요약하고 "이 설계 방향(도구: [OOO], 한국어 레이블 적용)이 맞으신가요? 확인해 주시면 바로 시각화를 시작하겠습니다."와 같은 질문으로 끝맺음하세요.
+
+[주의사항]
+- 실제 실행 코드 블록(```mermaid, ```python)을 생성하지 마세요. 오직 계획과 구조만 제안하세요.
+- 결과물에 대한 기대 효과를 포함하세요.
+- 설명은 한국어로 전문가답고 친절하게 작성하세요.
+"""
+
+EXECUTOR_SYSTEM_PROMPT = """
+당신은 'Planner'의 설계를 바탕으로 완벽한 시각화 결과물을 만드는 'Executor'입니다.
+
+[수행 지침]
+1. 구현(Code): Planner의 설계안과 사용자의 최종 요청을 바탕으로 지정된 다이어그램 유형의 ```mermaid``` 또는 ```python``` 블록으로 생성하십시오. **반드시 응답 당 단 하나의 코드 블록만 포함해야 합니다.**
+2. 엄격한 문법 준수 (절대 준수):
+   - **공통 규칙**:
+     - ID(대괄호/괄호 앞) 한국어 사용 절대 금지: 영문 또는 영문+숫자만 사용하십시오.
+     - **노드 정의**: `ID["한국어 레이블"]` 처럼 모든 노드의 텍스트는 반드시 **한국어**로 작성하고 **큰따옴표(" ")**로 감싸십시오.
+     - **화살표 라벨**: 아래 기술된 **'유형별 라벨 문법'**을 반드시 따르십시오. (공통 규칙보다 우선함)
+     - 주석(%%)은 반드시 별도의 줄에 작성하십시오.
+   - **유형별 라벨 문법 (필수 준수)**:
+     - **flowchart**: 화살표 라벨은 반드시 `| 라벨 |` 형식을 사용하십시오. **내부에 절대 따옴표(")를 포함하지 마십시오.** (예: `A -->| 승인 | B`)
+     - **classDiagram / sequenceDiagram / erDiagram / stateDiagram-v2**: 라벨은 반드시 콜론(`:`) 뒤에 작성하고 **큰따옴표(" ")**로 감싸십시오. (예: `A -> B : "메시지"`, `ClassA <|-- ClassB : "상속"`)
+     - **stateDiagram-v2 주의**: 단순 상태 설명은 `ID : "한국어 설명"` 형식을 사용하고, 불필요하게 `state ID { ID : "설명" }` 처럼 자기 자신을 블록으로 감싸지 마십시오. (순환 참조 오류 방지)
+   - 구조적 복잡성이 있는 경우 subgraph나 note 등을 사용하여 가독성을 높이십시오.
+3. 스타일 및 완성도:
+   - `flowchart`: `style ID fill:#f9f` 명령어로 중요 노드를 강조하십시오.
+   - `classDiagram / sequenceDiagram`: 무리한 스타일링보다 정확한 관계 정의와 `note`를 활용하여 정보를 전달하십시오.
+4. 분석 결과 (간결함 유지): 생성된 시각화물에 대한 핵심 인사이트를 3~5문장 내외의 한국어로 요약하여 제공하십시오.
+5. 종료: 모든 작업이 끝나면 더 이상 말을 덧붙이지 말고 응답을 종료하십시오.
+
+[주의사항]
+- **ID 부분에 절대 한국어를 포함하지 마십시오.** (문법 오류의 90% 원인)
+- **서로 다른 다이어그램의 문법(특히 라벨 기법)을 절대 혼용하지 마십시오.**
+- 응답 내에 여러 개의 ```mermaid``` 블록을 생성하지 마십시오. 가장 핵심적인 하나만 작성하십시오.
+- Planner가 제안한 유형을 우선으로 하되, 문법적 오류가 예상되는 경우 가장 안정적인 표준 문법을 선택하세요.
+
+[최종 경고: 렌더링 오류 방지 지침]
+1. **키워드 고정**: 그룹화 시에는 반드시 `subgraph` 키워드만 사용하십시오. (`sublect` 등 존재하지 않는 단어 금지)
+2. **flowchart 화살표 라벨 (유일한 예외)**: `| |` 내부의 한국어는 **절대 따옴표(")를 붙이지 마십시오.** 이 앱에서 유일하게 따옴표가 허용되지 않는 구역입니다.
+   - ✅ 올바른 예: `A -->| 이동 | B`
+   - ❌ 절대 금지: `A -->| "이동" | B`
+3. **노드 정의와의 차이**: 박스 안의 텍스트(`ID["내용"]`)는 반드시 따옴표를 써야 하지만, 화살표 위의 텍스트(`|내용|`)는 쓰지 말아야 합니다. 이 차이를 엄격히 구분하십시오.
+"""
+
 # 페이지 설정
 st.set_page_config(
-    page_title="Mermaid & Data LLM (Ollama)",
+    page_title="Mermaid & Data LLM (Agentic)",
     page_icon="🧞‍♂️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 커스텀 CSS (기존 스타일 유지)
+# 커스텀 CSS (기본 스타일 유지)
 st.markdown("""
     <style>
     .stApp {
@@ -41,14 +103,10 @@ st.markdown("""
         padding: 20px !important;
         margin-bottom: 20px !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: #f1f5f9 !important; /* 텍스트 색상 강제 지정 */
+        color: #f1f5f9 !important;
     }
     .stChatMessage p, .stChatMessage li, .stChatMessage div {
         color: #f1f5f9 !important;
-    }
-    .stChatMessage h1, .stChatMessage h2, .stChatMessage h3 {
-        color: #60a5fa !important;
-        font-family: inherit;
     }
     .main-title {
         background: linear-gradient(to right, #60a5fa, #a78bfa, #f472b6);
@@ -56,9 +114,7 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         font-weight: 800;
         font-size: 3.5rem;
-        font-family: inherit;
     }
-    /* 코드 블록 가독성 강화 */
     code {
         color: #fca5a5 !important;
         background-color: rgba(0, 0, 0, 0.4) !important;
@@ -72,11 +128,12 @@ st.markdown("""
         border-radius: 12px !important;
         padding: 15px !important;
     }
-    pre code {
-        color: #adbac7 !important;
-        background-color: transparent !important;
-        padding: 0 !important;
-        font-weight: 400;
+    .status-box {
+        background-color: rgba(96, 165, 250, 0.1);
+        border-left: 5px solid #60a5fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -86,8 +143,8 @@ title_col1, title_col2 = st.columns([0.1, 0.9])
 with title_col1:
     st.image("Mermaid_icon.svg", width=80)
 with title_col2:
-    st.markdown('<h1 class="main-title">Mermaid & Data LLM</h1>', unsafe_allow_html=True)
-st.caption("Ollama를 활용한 오프라인 지능형 다이어그램 생성 및 데이터 시각화 도구")
+    st.markdown('<h1 class="main-title">Mermaid Agentic LLM</h1>', unsafe_allow_html=True)
+st.caption("Planner-Executor 기반의 인터랙티브 다이어그램 설계 및 생성 도구 (Ollama)")
 
 # 로컬 Mermaid JS 파일 로드
 mermaid_js_path = os.path.join(os.getcwd(), "mermaid.min.js")
@@ -103,381 +160,150 @@ with st.sidebar:
     st.image("hero-chart-dark.svg", width=300)
     st.header("⚙️ Ollama 설정")
     
-    # Ollama 모델 목록 가져오기
     try:
-        model_names = []
         models = ollama.list()
-        # 모델 목록 출력하기
-        for model in models['models']:
-            model_names.append(model['model'])
-
+        model_names = [m['model'] for m in models['models']]
         if not model_names:
-            st.error("설치된 Ollama 모델이 없습니다. 'ollama pull llama3' 등을 실행하세요.")
+            st.error("설치된 Ollama 모델이 없습니다.")
             st.stop()
         selected_model = st.selectbox("사용할 모델을 선택하세요", model_names, index=0)
-        st.success(f"✅ 모델 '{selected_model}' 준비 완료")
+        st.success(f"✅ '{selected_model}' 모델 준비됨")
     except Exception as e:
-        st.error(f"❌ Ollama 서비스에 연결할 수 없습니다: {e}")
-        st.info("Ollama 서비스가 실행 중인지 확인하세요.")
+        st.error(f"❌ Ollama 서비스 연결 실패: {e}")
         st.stop()
     
     st.divider()
     if st.button("대화 기록 초기화"):
         st.session_state.messages = []
+        st.session_state.pending_plan = None
         st.rerun()
 
 # 세션 상태 초기화
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "pending_plan" not in st.session_state:
+    st.session_state.pending_plan = None
+if "trigger_executor" not in st.session_state:
+    st.session_state.trigger_executor = False
 
-# 이전 대화 렌더링
+# 대화 기록 렌더링
 for idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        if "mermaid_code" in message and message["mermaid_code"]:
-            html_code = f"""
-            <div style="background-color: white; padding: 20px; border-radius: 10px;">
+        if message.get("type") == "plan":
+            st.info("💡 위 설계가 마음에 드시면 실행 버튼을 눌러주세요.")
+        if message.get("mermaid_code"):
+            html_code = f"""<div style="background-color: white; padding: 20px; border-radius: 10px;">
                 <pre class="mermaid">{message['mermaid_code']}</pre>
                 <script>{mermaid_js_content}mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
-            </div>
-            """
+            </div>"""
             st.components.v1.html(html_code, height=500, scrolling=True)
-        if "plotly_fig" in message and message["plotly_fig"]:
+        if message.get("plotly_fig"):
             st.plotly_chart(message["plotly_fig"], use_container_width=True, key=f"plotly_history_{idx}")
 
-# 사용자 입력 처리
-if prompt := st.chat_input("메시지를 입력하세요"):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    # 시스템 프롬프트 구성 (다이어그램 및 시각화 지침 강화)
-    system_prompt = """
-    당신은 시스템 아키텍처 설계와 데이터 시각화 전문가입니다.
-    사용자의 요청에 따라 다음 두 가지 중 적절한 방식으로 응답하세요:
-
-[작동 매커니즘: Think Before Code]
-1. 분석(Analysis): 사용자의 요청을 수신하면 즉시 다이어그램을 그리지 말고, 시스템의 핵심 구성 요소, 데이터 흐름, 잠재적 병목 지점을 텍스트로 먼저 분석하십시오.
-2. 설계(Design): 분석을 바탕으로 최적의 시각화 도구(Mermaid의 특정 유형 또는 Plotly)를 결정하십시오.
-3. 구현(Code): 결정된 도구를 사용하여 완성도 높은 시각화 블록을 생성하십시오.
-
-[시각화 생성 가이드라인]
-1.당신은 복잡한 데이터와 구조를 시각화하는 전문가입니다. 사용자의 요청 의도에 따라 아래 '유형 선택 전략' 중 가장 적합한 것을 선택하여 ```mermaid``` 또는 ```python``` 블록으로 생성하십시오.
-2. 가독성: 복잡한 구조의 경우 subgraph를 사용하여 논리적 영역을 반드시 분리하십시오.
-3. 스타일: classDef와 style을 사용하여 중요 노드나 데이터를 강조하십시오.
-
-■ 공통 필수 규칙 (절대 준수):
-1. 'graph' 대신 'flowchart'를 기본으로 사용하십시오. (예: flowchart TD)
-2. 가장 중요한 화살표 라벨 규칙: 라벨과 바(|) 사이에는 공백이 없어야 합니다.
-   - 옳은 예: A -->|"라벨"| B (O)
-   - 틀린 예: A -->| "라벨" | B (X) , A --> B|라벨| (X)
-3. 주석(%%) 관련 규칙: 주석은 반드시 별도의 줄에 작성하십시오. 코드와 같은 줄에 작성하는 것을 엄격히 금지합니다.
-   - 옳은 예:
-     %% 주석 내용
-     A --> B
-   - 틀린 예: A --> B %% 주석 내용 (X)
-4. 모든 노드와 ID는 영어 또는 영어+숫자로 작성하십시오.
-5. 이미 정의된 ID를 재사용할 때는 ID만 작성하십시오. (예: A --> B --> A)
-6. 한국어를 포함한 모든 텍스트는 ID 이후 또는 라벨 내에서 큰따옴표(" ")로 감싸십시오.
-7. 노드 이름에 공백이 필요한 경우 반드시 큰따옴표("")로 감쌉니다. (예: A["시작 지점"])
-8. 서브그래프는 반드시 명시적 ID와 따옴표를 사용하십시오.
-   - 예: subgraph SG1 ["프로세스 영역"]
-9. 화살표(-->) 앞뒤로 불필요한 공백이나 줄바꿈을 넣지 않습니다.
-10. 특수문자나 한글을 노드 ID(A, B, C 등)로 사용하지 말고, 영문 ID를 먼저 선언한 뒤 텍스트를 할당합니다.
-11. 인덴트(들여쓰기)는 스페이스 2칸으로 통일하며, 전각 문자(Full-width space) 사용을 엄격히 금지합니다.
-
-■ 유형별 선택 전략 및 실전 예제 코드:
-
-1. [Flowchart & Block] 절차, 알고리즘, 시스템 구성 요소 배치
-   - flowchart TD (Top/down 순서도),flowchart LR (좌우 순서도),block (블록 구조), timeline (타임라인)
-    예: 
-    flowchart TD
-        A[Hard] -->|Text| B(Round)
-        B --> C{Decision}
-        C -->|One| D[Result 1]
-        C -->|Two| E[Result 2]
-
-    예: 
-    flowchart LR
-        A[Hard] -->|Text| B(Round)
-        B --> C{Decision}
-        C -->|One| D[Result 1]
-        C -->|Two| E[Result 2]
-
-    예:
-    block
-        columns 1
-        db(("DB"))
-        blockArrowId6<["&nbsp;&nbsp;&nbsp;"]>(down)
-        block:ID
-            A
-            B["A wide one in the middle"]
-            C
-        end
-        space
-        D
-        ID --> D
-        C --> D
-        style B fill:#969,stroke:#333,stroke-width:4px
-    
-    예:
-    timeline
-        title History of Social Media Platform
-          2002 : LinkedIn
-          2004 : Facebook : Google
-          2005 : YouTube
-          2006 : Twitter
-          2007 : Tumblr
-          2008 : Instagram
-          2010 : Pinterest
-
-2. [Architecture & C4] 고수준 시스템 아키텍처 및 소프트웨어 설계
-   - C4Context (시스템/컨테이너 관계), architecture-beta (인프라 배치)
-   예: 
-    C4Context
-       Person(user, "고객")
-       System(web, "웹앱")
-       Rel(user, web, "사용")
-
-    예:
-    architecture-beta
-        group api(cloud)[API]
-
-        service db(database)[Database] in api
-        service disk1(disk)[Storage] in api
-        service disk2(disk)[Storage] in api
-        service server(server)[Server] in api
-
-        db:L -- R:server
-        disk1:T -- B:server
-        disk2:T -- B:db
-
-3. [Sequence & Packet] 객체 간 상호작용 및 네트워크 프로토콜 구조
-   - sequenceDiagram(메시지 흐름), packet(비트 단위 헤더)
-    예: 
-    sequenceDiagram
-        Alice->>John: Hello John, how are you?
-        John-->>Alice: Great!ㅉ
-        Alice-)John: See you later!
-
-    예:
-    packet
-        0-15: "Source Port"
-        16-31: "Destination Port"
-        32-63: "Sequence Number"
-        64-95: "Acknowledgment Number"
-        96-99: "Data Offset"
-        100-105: "Reserved"
-        106: "URG"
-        107: "ACK"
-        108: "PSH"
-        109: "RST"
-        110: "SYN"
-        111: "FIN"
-        112-127: "Window"
-        128-143: "Checksum"
-        144-159: "Urgent Pointer"
-        160-191: "(Options and Padding)"
-        192-255: "Data (variable length)"
-
-4. [Data Flow & 비중] 자원 흐름 및 데이터 분포 분석
-   - sankey(흐름량), pie (점유율), treemap-beta (계층적 비중)
-    예: 
-    sankey
-        Electricity grid,Over generation / exports,104.453
-        Electricity grid,Heating and cooling - homes,113.726
-        Electricity grid,H2 conversion,27.14
-
-    예:
-    pie title Pets adopted by volunteers
-        "Dogs" : 386
-        "Cats" : 85
-        "Rats" : 15
-
-    예:
-    treemap-beta
-    "Category A"
-        "Item A1": 10
-        "Item A2": 20
-    "Category B"
-        "Item B1": 15
-        "Item B2": 25
-
-5. [Project Management] 일정, 작업 상태 및 업무 시각화
-   - kanban (진행 상태)
-    예:
-    kanban
-        Todo
-            [Create Documentation]
-            docs[Create Blog about the new diagram]
-        [In progress]
-            id6[Create renderer so that it works in all cases. We also add some extra text here for testing purposes. And some more just for the extra flare.]
-        id9[Ready for deploy]
-            id8[Design grammar]@{ assigned: 'knsv' }
-        id10[Ready for test]
-            id4[Create parsing tests]@{ ticket: MC-2038, assigned: 'K.Sveidqvist', priority: 'High' }
-            id66[last item]@{ priority: 'Very Low', assigned: 'knsv' }
-        id11[Done]
-            id5[define getData]
-            id2[Title of diagram is more than 100 chars when user duplicates diagram with 100 char]@{ ticket: MC-2036, priority: 'Very High'}
-            id3[Update DB function]@{ ticket: MC-2037, assigned: knsv, priority: 'High' }
-
-        id12[Can't reproduce]
-            id3[Weird flickering in Firefox]
-
-6. [Analysis & Stats] 다각도 역량 분석 및 수치 데이터
-   - xychart (Bar/Line), radar-beta (방사형 차트)
-    예: 
-    xychart
-        title "Sales Revenue"
-        x-axis [jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec]
-        y-axis "Revenue (in $)" 4000 --> 11000
-        bar [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]
-        line [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]
-
-    예:
-    radar-beta
-        axis m["Math"], s["Science"], e["English"]
-        axis h["History"], g["Geography"], a["Art"]
-        curve a["Alice"]{85, 90, 80, 70, 75, 90}
-        curve b["Bob"]{70, 75, 85, 80, 90, 85}
-        max 100
-        min 0
-
-7. [Logic & Concept] 아이디어 확장 및 상태 변화
-   - mindmap (브레인스토밍), stateDiagram (상태 전이)
-    예:
-    mindmap
-        root((mindmap))
-            Origins
-                Long history
-                ::icon(fa fa-book)
-                Popularisation
-                    British popular psychology author Tony Buzan
-            Research
-                On effectiveness<br/>and features
-                On Automatic creation
-                    Uses
-                        Creative techniques
-                        Strategic planning
-                        Argument mapping
-            Tools
-                Pen and paper
-                Mermaid
-    
-    예:
-    stateDiagram
-        [*] --> Still
-        Still --> [*]
-
-        Still --> Moving
-        Moving --> Still
-        Moving --> Crash
-        Crash --> [*]
-
-8. [Structure & Git] 코드 구조 및 버전 관리 전략
-   - classDiagram (객체 설계), erDiagram (DB 관계), gitGraph (브랜치 전략)
-    예:
-    classDiagram
-        note "From Duck till Zebra"
-        Animal <|-- Duck
-        note for Duck "can fly<br>can swim<br>can dive<br>can help in debugging"
-        Animal <|-- Fish
-        Animal <|-- Zebra
-        Animal : +int age
-        Animal : +String gender
-        Animal: +isMammal()
-        Animal: +mate()
-        class Duck{
-            +String beakColor
-            +swim()
-            +quack()
-        }
-        class Fish{
-            -int sizeInFeet
-            -canEat()
-        }
-        class Zebra{
-            +bool is_wild
-            +run()
-        }
-    
-    예:
-    erDiagram
-        CUSTOMER ||--o{ ORDER : places
-        ORDER ||--|{ LINE-ITEM : contains
-        CUSTOMER }|..|{ DELIVERY-ADDRESS : uses
-
-    예:
-    gitGraph
-        commit
-        commit
-        branch develop
-        checkout develop
-        commit
-        commit
-        checkout main
-        merge develop
-        commit
-        commit
-    
-9. [Plotly 시각화 (Python)] 정밀한 수치 데이터 시각화
-   - 반드시 ```python 블록 사용 및 'import plotly.express as px' 포함.
-   - 결과 객체명은 반드시 'fig'로 지정하십시오.
-
-    항상 한국어로 친절하게 설명하고, 결과물에 대한 상세한 분석도 곁들여주세요.
-    """
-
-    # Ollama 메시지 형식 구성
-    ollama_messages = [{"role": "system", "content": system_prompt}]
+# 플래너 실행 함수
+def run_planner(user_prompt):
+    messages = [{"role": "system", "content": PLANNER_SYSTEM_PROMPT}]
+    # 과거 대화 맥락 포함
     for m in st.session_state.messages:
-        ollama_messages.append({"role": m["role"], "content": m["content"]})
+        if m["role"] != "system":
+            messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": user_prompt})
+    
+    with st.status("🏗️ 아키텍처 및 시각화 계획 수립 중...", expanded=True) as status:
+        try:
+            response = ollama.chat(model=selected_model, messages=messages, options={'num_ctx': 8192})
+            plan_content = response['message']['content']
+            status.update(label="✅ 계획 수립 완료!", state="complete")
+            return plan_content
+        except Exception as e:
+            status.update(label="❌ 계획 수립 실패", state="error")
+            st.error(f"Planner 실행 중 오류가 발생했습니다: {e}")
+            return None
+
+# 실행자 실행 함수
+def run_executor(plan_content, user_feedback=""):
+    messages = [
+        {"role": "system", "content": EXECUTOR_SYSTEM_PROMPT},
+        {"role": "user", "content": f"다음 'Planner'의 설계안을 바탕으로 시각화 코드를 생성하고 분석해 주세요.\n\n[Planner의 설계안]\n{plan_content}"}
+    ]
+    if user_feedback:
+        messages.append({"role": "user", "content": f"사용자 추가 피드백: {user_feedback}"})
     
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
         try:
-            # 스트리밍 응답 처리
-            stream = ollama.chat(model=selected_model, messages=ollama_messages, stream=True)
+            stream = ollama.chat(model=selected_model, messages=messages, stream=True, 
+                                 options={'num_ctx': 8192})
+            
             for chunk in stream:
                 full_response += chunk['message']['content']
                 response_placeholder.markdown(full_response + "▌")
             
             response_placeholder.markdown(full_response)
-            
-            # Mermaid 추출
-            mermaid_match = re.search(r'```mermaid\n(.*?)\n```', full_response, re.DOTALL)
-            current_mermaid = None
-            if mermaid_match:
-                current_mermaid = mermaid_match.group(1).strip()
-                html_code = f"""
-                <div style="background-color: white; padding: 20px; border-radius: 10px; margin-top: 10px;">
-                    <pre class="mermaid">{current_mermaid}</pre>
-                    <script>{mermaid_js_content}mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
-                </div>
-                """
-                st.components.v1.html(html_code, height=500, scrolling=True)
-
-            # Plotly 추출
-            plotly_match = re.search(r'```python\n(.*?)\n```', full_response, re.DOTALL)
-            current_fig = None
-            if plotly_match:
-                python_code = plotly_match.group(1).strip()
-                try:
-                    local_ns = {"px": px, "go": go, "st": st}
-                    exec(python_code, {}, local_ns)
-                    if "fig" in local_ns:
-                        current_fig = local_ns["fig"]
-                        st.plotly_chart(current_fig, use_container_width=True, key=f"plotly_current_{len(st.session_state.messages)}")
-                except Exception as e:
-                    st.error(f"시각화 코드 오류: {e}")
-
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": full_response,
-                "mermaid_code": current_mermaid,
-                "plotly_fig": current_fig
-            })
-
         except Exception as e:
-            st.error(f"⚠️ 오류 발생: {e}")
+            st.error(f"Executor 실행 중 오류가 발생했습니다: {e}")
+            return
+        
+        # Mermaid 추출
+        mermaid_match = re.search(r'```mermaid\n(.*?)\n```', full_response, re.DOTALL)
+        current_mermaid = mermaid_match.group(1).strip() if mermaid_match else None
+        if current_mermaid:
+            html_code = f"""<div style="background-color: white; padding: 20px; border-radius: 10px; margin-top: 10px;">
+                <pre class="mermaid">{current_mermaid}</pre>
+                <script>{mermaid_js_content}mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
+            </div>"""
+            st.components.v1.html(html_code, height=500, scrolling=True)
+
+        # Plotly 추출
+        plotly_match = re.search(r'```python\n(.*?)\n```', full_response, re.DOTALL)
+        current_fig = None
+        if plotly_match:
+            python_code = plotly_match.group(1).strip()
+            try:
+                local_ns = {"px": px, "go": go, "st": st}
+                exec(python_code, {}, local_ns)
+                if "fig" in local_ns:
+                    current_fig = local_ns["fig"]
+                    st.plotly_chart(current_fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"시각화 코드 오류: {e}")
+
+        # 메시지 추가
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": full_response,
+            "mermaid_code": current_mermaid,
+            "plotly_fig": current_fig
+        })
+        st.session_state.pending_plan = None # 완료 후 삭제
+
+# 사용자 입력 처리
+if prompt := st.chat_input("메시지를 입력하세요 (예: MSA 구조 그려줘)"):
+    # 이전 계획이 있더라도 새로운 입력이 오면 다시 계획 수립
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # 플래너 실행
+    plan = run_planner(prompt)
+    st.session_state.pending_plan = plan
+    st.session_state.messages.append({"role": "assistant", "content": plan, "type": "plan"})
+    st.rerun()
+
+# 리뷰 단계 UI (마지막 메시지가 계획일 때만 표시)
+if st.session_state.pending_plan and st.session_state.messages and st.session_state.messages[-1].get("type") == "plan":
+    col1, col2 = st.columns([0.2, 0.8])
+    with col1:
+        if st.button("🚀 실행(Proceed)", use_container_width=True):
+            st.session_state.trigger_executor = True
+            st.rerun()
+    with col2:
+        st.write("계획이 마음에 안 드시면 채팅창에 다시 입력해 주세요.")
+
+# 실행 트리거 (컬럼 외부에서 실행하여 전체 너비 사용)
+if st.session_state.trigger_executor and st.session_state.pending_plan:
+    run_executor(st.session_state.pending_plan)
+    st.session_state.trigger_executor = False
+    st.rerun()
